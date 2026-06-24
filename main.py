@@ -85,7 +85,7 @@ def check_timers():
 def auto_check_loop():
     while True:
         check_timers()
-        time.sleep(60)
+        time.sleep(5)
 
 # ==========================================
 # 🚀 معالجة الرسائل

@@ -7,10 +7,10 @@ from flask import Flask
 
 app = Flask(__name__)
 
-# بيانات البوت بتاعك
+# ==========================================
+# 🔑 بيانات البوت والآيديات
+# ==========================================
 BOT_TOKEN = "8889630212:AAHc8EyGdhiJDq6uIfgDYlIX_-A7TrCyS9I"
-
-# 🛑 حط هنا الآيدي (ID) بتاعك
 ALLOWED_USERS = {7906637031, 6199220525, 8520205949, 8877182287}
 
 # ==========================================
@@ -18,13 +18,13 @@ ALLOWED_USERS = {7906637031, 6199220525, 8520205949, 8877182287}
 # ==========================================
 @app.route('/')
 def home():
-    return "Bot is Running 24/7 (Polling Mode)!"
+    return "VIP System is Running 24/7!"
 
 def run_server():
     app.run(host="0.0.0.0", port=8000)
 
 # ==========================================
-# 💾 قواعد البيانات والإعدادات
+# 💾 قواعد البيانات 
 # ==========================================
 def init_db():
     with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
@@ -37,23 +37,9 @@ def init_db():
 
 init_db()
 
-def setup_bot_menu():
-    commands = [
-        {"command": "start", "description": "🏠 القائمة الرئيسية"},
-        {"command": "add", "description": "✍️ إضافة كارت"},
-        {"command": "view", "description": "📋 عرض الكروت"},
-        {"command": "backup", "description": "💾 حفظ نسخة من البيانات على تليجرام"}
-    ]
-    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setMyCommands", json={"commands": commands})
-
-def send_backup(chat_id):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-    try:
-        with open("bot_data.db", "rb") as file:
-            requests.post(url, data={"chat_id": chat_id, "caption": "💾 نسختك الاحتياطية من البيانات."}, files={"document": file})
-    except Exception as e:
-        tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ لم يتم العثور على بيانات لحفظها."})
-
+# ==========================================
+# 🛠️ الدوال المساعدة (Helpers)
+# ==========================================
 def tg_request(method, payload):
     def send_it():
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
@@ -63,22 +49,50 @@ def tg_request(method, payload):
             pass
     threading.Thread(target=send_it, daemon=True).start()
 
-def send_main_menu(chat_id):
+def get_time_left(save_time, timer_alert):
+    if not timer_alert or timer_alert <= 0: return "بدون تايمر ⚪"
+    diff = (save_time + (timer_alert * 60)) - time.time()
+    if diff <= 0: return "انتهى الوقت 🔴"
+    return f"⏳ {int(diff // 60)} دقيقة"
+
+def send_backup(chat_id):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+    try:
+        with open("bot_data.db", "rb") as file:
+            requests.post(url, data={"chat_id": chat_id, "caption": "💾 **نسختك الاحتياطية من البيانات.**\nاحتفظ بهذا الملف للآمان.", "parse_mode": "Markdown"}, files={"document": file})
+    except Exception:
+        tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ لا توجد بيانات مسجلة حتى الآن لحفظها."})
+
+# ==========================================
+# 🎛️ واجهة لوحة التحكم (الزراير المربعة)
+# ==========================================
+def send_main_menu(chat_id, message_id=None):
     keyboard = {
         "inline_keyboard": [
-            [{"text": "✍️ Add Card (Via Chat)", "callback_data": "add_via_chat"}],
-            [{"text": "📋 View Cards", "callback_data": "view_cards"}],
-            [{"text": "🗑️ Delete Specific Card", "callback_data": "delete_card"}]
+            [
+                {"text": "✍️ إضافة بطاقة", "callback_data": "menu_add"},
+                {"text": "📋 عرض البطاقات", "callback_data": "menu_view"}
+            ],
+            [
+                {"text": "🔍 بحث سريع", "callback_data": "menu_search"},
+                {"text": "✏️ تعديل بطاقة", "callback_data": "menu_edit"}
+            ],
+            [
+                {"text": "🗑️ حذف بطاقة", "callback_data": "menu_delete"},
+                {"text": "💾 نسخة احتياطية", "callback_data": "menu_backup"}
+            ]
         ]
     }
-    tg_request("sendMessage", {"chat_id": chat_id, "text": "⚡️ **القائمة الرئيسية (Main Menu)** ⚡\n\nأهلاً بك في نظام الإدارة، يمكنك استخدام القائمة الجانبية (Menu) أو الأزرار أدناه:", "parse_mode": "Markdown", "reply_markup": keyboard})
+    msg_text = "⚡️ **لوحة تحكم النظام (VIP Dashboard)** ⚡️\n\nاختر الإجراء المطلوب من الأزرار أدناه:"
+    
+    if message_id:
+        tg_request("editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": msg_text, "parse_mode": "Markdown", "reply_markup": keyboard})
+    else:
+        tg_request("sendMessage", {"chat_id": chat_id, "text": msg_text, "parse_mode": "Markdown", "reply_markup": keyboard})
 
-def get_time_left(save_time, timer_alert):
-    if not timer_alert or timer_alert <= 0: return "No Timer"
-    diff = (save_time + (timer_alert * 60)) - time.time()
-    if diff <= 0: return "Expired 🔴"
-    return f"⏳ {int(diff // 60)} Min"
-
+# ==========================================
+# ⏱️ نظام الفحص الآلي (كل 5 ثواني)
+# ==========================================
 def check_timers():
     now = time.time()
     try:
@@ -90,20 +104,20 @@ def check_timers():
                 card_id, save_time, card_num, balance, counter, paid_now, timer_alert, chat_id, notified = row
                 if now >= save_time + (timer_alert * 60):
                     last4 = card_num[-4:] if len(card_num) >= 4 else card_num
-                    msg = f"🚨 **حان موعد الدفعة الثانية!** 🚨\n\n💳 البطاقة: `[ {last4} ]`\n💰 الرصيد المتبقي: **${balance}**\n🔄 العداد المتبقي: `{counter}`"
+                    msg = f"🚨 **إشعار الدفعة القادمة!** 🚨\n\n💳 البطاقة: `[ {last4} ]`\n💰 الرصيد المتاح: **${balance}**\n🔄 العداد المتبقي: `{counter}`\n\nقم بالدخول للوحة التحكم لتحديث البيانات."
                     tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
                     c.execute("UPDATE cards SET notified='YES' WHERE id=?", (card_id,))
             conn.commit()
-    except Exception as e:
+    except Exception:
         pass
 
 def auto_check_loop():
     while True:
         check_timers()
-        time.sleep(5) # الفحص كل 5 ثواني كما طلبت
+        time.sleep(5)
 
 # ==========================================
-# 🚀 معالجة الرسائل
+# 🚀 معالجة المدخلات (الرسائل والزراير)
 # ==========================================
 def process_update(update):
     chat_id = None
@@ -115,27 +129,18 @@ def process_update(update):
     if chat_id and chat_id not in ALLOWED_USERS:
         return
 
-    # معالجة الرسائل النصية
+    # ----------------------------------
+    # 📝 أولاً: معالجة الرسائل النصية
+    # ----------------------------------
     if "message" in update and "text" in update["message"]:
         text = update["message"]["text"]
         
-        # 1. أوامر القائمة الرئيسية (Menu Commands)
+        # أمر البداية
         if text in ["/start", "start", "/main"]:
             send_main_menu(chat_id)
             return
-        elif text == "/add":
-            msg = "يمكنك الآن إرسال البيانات يدوياً بالتنسيق:\n`رقم البطاقة | الرصيد | العداد | المدفوع | التايمر`"
-            tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
-            return
-        elif text == "/view":
-            update["callback_query"] = {"id": "0", "data": "view_cards", "message": {"chat": {"id": chat_id}, "message_id": 0}}
-            process_update(update) # تحويل للأمر الداخلي
-            return
-        elif text == "/backup":
-            send_backup(chat_id)
-            return
 
-        # 2. ميزة البحث بـ 4 أرقام
+        # البحث السريع (لو كتب 4 أرقام)
         if re.match(r'^\d{4}$', text.strip()):
             search_last4 = text.strip()
             with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
@@ -144,16 +149,15 @@ def process_update(update):
                 rows = c.fetchall()
                 if rows:
                     for row in rows:
-                        card_num = row[2]
-                        last4 = card_num[-4:]
+                        last4 = row[2][-4:]
                         msg = f"🔍 **نتيجة البحث:**\n\n💳 الكارت: `[ {last4} ]`\n💰 الرصيد: `${row[3]}`\n🔄 العداد: `{row[4]}`\n⏳ الوقت: {get_time_left(row[1], row[6])}"
-                        keyboard = {"inline_keyboard": [[{"text": "✏️ تعديل الكارت", "callback_data": f"edit_prompt_{last4}"}]]}
+                        keyboard = {"inline_keyboard": [[{"text": "✏️ تعديل", "callback_data": f"edit_prompt_{last4}"}], [{"text": "🔙 القائمة", "callback_data": "back_to_main"}]]}
                         tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
                 else:
                     tg_request("sendMessage", {"chat_id": chat_id, "text": f"❌ لم يتم العثور على كارت ينتهي بـ {search_last4}"})
             return
 
-        # 3. معالجة أمر التعديل
+        # تعديل يدوي
         if text.startswith("تعديل |"):
             try:
                 parts = text.split("|")
@@ -167,38 +171,33 @@ def process_update(update):
                     c.execute("UPDATE cards SET balance=?, counter=?, timer_alert=?, notified='NO', save_time=? WHERE card_number LIKE ?", 
                               (new_balance, new_counter, new_timer, time.time(), f"%{last4}"))
                     if c.rowcount > 0:
-                        tg_request("sendMessage", {"chat_id": chat_id, "text": f"✅ **تم تحديث بيانات الكارت [ {last4} ] بنجاح!**", "parse_mode": "Markdown"})
+                        tg_request("sendMessage", {"chat_id": chat_id, "text": f"✅ **تم التحديث!**\nالكارت `[ {last4} ]` تم حفظ بياناته الجديدة.", "parse_mode": "Markdown"})
+                        send_main_menu(chat_id)
                     else:
-                        tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ لم يتم العثور على الكارت للتعديل."})
+                        tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ خطأ: الكارت غير موجود."})
                     conn.commit()
-            except Exception as e:
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ **خطأ في التنسيق.** يرجى التأكد من كتابة الأرقام بشكل صحيح.", "parse_mode": "Markdown"})
+            except Exception:
+                tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ التنسيق غير صحيح."})
             return
 
-        # 4. التقاط الفيزا
+        # التقاط الفيزا التلقائي
         if "Balance:" in text or "Purchase Successful" in text:
             card_match = re.search(r'\b(\d{16})\b', text)
             balance_match = re.search(r'Balance:\s*\$?\s*([\d\.]+)', text)
-
             if card_match and balance_match:
                 card_num = card_match.group(1)
                 balance = balance_match.group(1)
                 last4 = card_num[-4:]
-
                 keyboard = {"inline_keyboard": [
-                    [
-                        {"text": "1", "callback_data": f"st2_{card_num}_{balance}_1"},
-                        {"text": "2", "callback_data": f"st2_{card_num}_{balance}_2"},
-                        {"text": "3", "callback_data": f"st2_{card_num}_{balance}_3"},
-                        {"text": "4", "callback_data": f"st2_{card_num}_{balance}_4"},
-                        {"text": "5", "callback_data": f"st2_{card_num}_{balance}_5"}
-                    ]
+                    [{"text": "1", "callback_data": f"st2_{card_num}_{balance}_1"}, {"text": "2", "callback_data": f"st2_{card_num}_{balance}_2"}, {"text": "3", "callback_data": f"st2_{card_num}_{balance}_3"}],
+                    [{"text": "4", "callback_data": f"st2_{card_num}_{balance}_4"}, {"text": "5", "callback_data": f"st2_{card_num}_{balance}_5"}],
+                    [{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
                 ]}
-                msg = f"✅ **تم التقاط الفيزا بنجاح!**\n💳 الفيزا: `[ **** {last4} ]`\n💰 الرصيد المكتشف: `${balance}`\n\n👇 **اختر العداد (Counter):**"
+                msg = f"✅ **فيزا جديدة!**\n💳 `[ **** {last4} ]`\n💰 الرصيد: `${balance}`\n\n👇 **اختر العداد:**"
                 tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
                 return
 
-        # 5. الحفظ اليدوي
+        # إضافة يدوية كاملة
         elif "|" in text and len(text.split("|")) == 5 and not text.startswith("تعديل"):
             try:
                 parts = text.split("|")
@@ -207,7 +206,6 @@ def process_update(update):
                 original_counter = int(parts[2].strip())
                 paid_now = float(parts[3].strip())
                 timer_alert = int(parts[4].strip())
-
                 new_balance = max(0.0, original_balance - paid_now)
                 new_counter = max(0, original_counter - 1)
 
@@ -216,79 +214,145 @@ def process_update(update):
                     c.execute("INSERT INTO cards (save_time, card_number, balance, counter, paid_now, timer_alert, chat_id, notified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                               (time.time(), card_num, new_balance, new_counter, paid_now, timer_alert, str(chat_id), "NO"))
                     conn.commit()
-
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "✅ **تم حفظ البطاقة بنجاح!**", "parse_mode": "Markdown"})
+                tg_request("sendMessage", {"chat_id": chat_id, "text": "✅ **تم حفظ البطاقة في النظام.**", "parse_mode": "Markdown"})
                 send_main_menu(chat_id)
             except ValueError:
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ **حدث خطأ في الأرقام!**", "parse_mode": "Markdown"})
+                pass
         else:
             send_main_menu(chat_id)
 
-    # معالجة الزراير (Inline Keyboard)
+    # ----------------------------------
+    # 🖱️ ثانياً: معالجة الأزرار
+    # ----------------------------------
     elif "callback_query" in update:
         cb = update["callback_query"]
         callback_id = cb["id"]
         data = cb["data"]
-        
-        # لتفادي الأخطاء إذا كان الاستدعاء داخلي
-        msg_id = cb["message"]["message_id"] if "message_id" in cb["message"] else None
+        msg_id = cb["message"]["message_id"]
 
         tg_request("answerCallbackQuery", {"callback_query_id": callback_id})
 
-        # زر طلب التعديل
-        if data.startswith("edit_prompt_"):
-            last4 = data.split("_")[2]
-            msg = f"✏️ **لتعديل الكارت `[ {last4} ]`**\n\nقم بنسخ التنسيق التالي، املأ الأرقام الجديدة، وأرسله لي:\n\n`تعديل | {last4} | الرصيد الجديد | العداد الجديد | التايمر الجديد`\n\n*(مثال: تعديل | {last4} | 40.5 | 2 | 15)*"
-            tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
+        # زر الرجوع للقائمة
+        if data == "back_to_main":
+            send_main_menu(chat_id, msg_id)
 
+        # أوامر القائمة الرئيسية المربعة
+        elif data == "menu_add":
+            msg = "✍️ **لإضافة بطاقة يدوياً:**\nأرسل رسالة بهذا التنسيق:\n`رقم البطاقة | الرصيد | العداد | المدفوع | التايمر`\n\n*(أو قم بعمل إعادة توجيه لرسالة الدفع وسيتم التقاطها آلياً)*"
+            keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+
+        elif data == "menu_search":
+            msg = "🔍 **البحث السريع:**\nالآن قم بإرسال **آخر 4 أرقام** من البطاقة في الشات للبحث عنها.\n*(مثال: أرسل `1234`)*"
+            keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+
+        elif data == "menu_edit":
+            msg = "✏️ **تعديل بطاقة موجودة:**\nلتعديل الرصيد أو العداد أو الوقت، انسخ التنسيق التالي واملأه:\n\n`تعديل | آخر_4_أرقام | الرصيد | العداد | التايمر`\n\n*(مثال: تعديل | 1234 | 40.5 | 2 | 15)*"
+            keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+
+        elif data == "menu_backup":
+            tg_request("deleteMessage", {"chat_id": chat_id, "message_id": msg_id})
+            send_backup(chat_id)
+            send_main_menu(chat_id)
+
+        elif data == "menu_view":
+            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
+                c = conn.cursor()
+                c.execute("SELECT * FROM cards ORDER BY id DESC LIMIT 10")
+                rows = c.fetchall()
+
+            if not rows:
+                keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
+                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📭 النظام فارغ، لا توجد بطاقات محفوظة.", "reply_markup": keyboard})
+                return
+
+            keyboard = []
+            for row in rows:
+                last4 = row[2][-4:] if len(row[2]) >= 4 else row[2]
+                btn_text = f"💳 [ {last4} ] | ${row[3]} | {get_time_left(row[1], row[6])}"
+                keyboard.append([{"text": btn_text, "callback_data": f"card_{row[0]}"}])
+            keyboard.append([{"text": "🔙 رجوع للقائمة الرئيسية", "callback_data": "back_to_main"}])
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📋 **قائمة البطاقات الحالية:**\n*(اضغط على الكارت للتفاصيل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
+
+        elif data == "menu_delete":
+            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
+                c = conn.cursor()
+                c.execute("SELECT id, card_number FROM cards ORDER BY id DESC LIMIT 10")
+                rows = c.fetchall()
+
+            if not rows:
+                keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
+                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "⚠️ لا توجد بطاقات لمسحها.", "reply_markup": keyboard})
+                return
+
+            keyboard = []
+            for row in rows:
+                last4 = row[1][-4:] if len(row[1]) >= 4 else row[1]
+                keyboard.append([{"text": f"❌ حذف: [ {last4} ]", "callback_data": f"del_{row[0]}"}])
+            keyboard.append([{"text": "🔙 إلغاء والرجوع", "callback_data": "back_to_main"}])
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "🗑️ **اختر البطاقة لنهائياً من النظام:**", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
+
+        # تفاصيل الكارت
+        elif data.startswith("card_"):
+            card_id = data.split("_")[1]
+            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
+                c = conn.cursor()
+                c.execute("SELECT * FROM cards WHERE id=?", (card_id,))
+                row = c.fetchone()
+            if row:
+                last4 = row[2][-4:] if len(row[2]) >= 4 else row[2]
+                msg = f"💎 **تفاصيل البطاقة:**\n\n🔢 رقم النهاية: `[ {last4} ]`\n💰 الرصيد المتاح: `${row[3]}`\n🔄 العداد: `{row[4]}`\n⏳ الوقت المتبقي: {get_time_left(row[1], row[6])}"
+                keyboard = {"inline_keyboard": [
+                    [{"text": "✏️ تعديل سريع", "callback_data": f"edit_prompt_{last4}"}, {"text": "❌ حذف الكارت", "callback_data": f"del_{card_id}"}],
+                    [{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]
+                ]}
+                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+
+        elif data.startswith("edit_prompt_"):
+            last4 = data.split("_")[2]
+            msg = f"✏️ **تعديل الكارت `[ {last4} ]`**\n\nارسل التعديل الان كالتالي:\n`تعديل | {last4} | الرصيد | العداد | التايمر`"
+            keyboard = {"inline_keyboard": [[{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]]}
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+
+        elif data.startswith("del_"):
+            card_id = data.split("_")[1]
+            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
+                c = conn.cursor()
+                c.execute("DELETE FROM cards WHERE id=?", (card_id,))
+                conn.commit()
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "✅ **تم الحذف بنجاح.**", "parse_mode": "Markdown"})
+            send_main_menu(chat_id)
+
+        # استكمال إضافة كارت جديد
         elif data.startswith("st2_"):
             parts = data.split("_")
-            card_num = parts[1]
-            balance = parts[2]
-            counter = parts[3]
-
+            card_num, balance, counter = parts[1], parts[2], parts[3]
             keyboard = {"inline_keyboard": [
-                [
-                    {"text": "1", "callback_data": f"st3_{card_num}_{balance}_{counter}_1"},
-                    {"text": "3", "callback_data": f"st3_{card_num}_{balance}_{counter}_3"},
-                    {"text": "5", "callback_data": f"st3_{card_num}_{balance}_{counter}_5"},
-                    {"text": "6", "callback_data": f"st3_{card_num}_{balance}_{counter}_6"}
-                ],
-                [
-                    {"text": "7", "callback_data": f"st3_{card_num}_{balance}_{counter}_7"},
-                    {"text": "10", "callback_data": f"st3_{card_num}_{balance}_{counter}_10"},
-                    {"text": "20", "callback_data": f"st3_{card_num}_{balance}_{counter}_20"}
-                ]
+                [{"text": "1", "callback_data": f"st3_{card_num}_{balance}_{counter}_1"}, {"text": "3", "callback_data": f"st3_{card_num}_{balance}_{counter}_3"}],
+                [{"text": "5", "callback_data": f"st3_{card_num}_{balance}_{counter}_5"}, {"text": "10", "callback_data": f"st3_{card_num}_{balance}_{counter}_10"}],
+                [{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
             ]}
-            msg = f"💳 الفيزا: `[ **** {card_num[-4:]} ]` | 💰 الرصيد: `${balance}`\n🔢 العداد المختار: `{counter}`\n\n👇 **اختر المدفوع الآن (Paid Now):**"
-            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            msg = f"💳 `[ **** {card_num[-4:]} ]` | 💰 `${balance}`\n🔢 العداد المختار: `{counter}`\n\n👇 **المدفوع الآن:**"
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data.startswith("st3_"):
             parts = data.split("_")
-            card_num = parts[1]
-            balance = parts[2]
-            counter = parts[3]
-            paid = parts[4]
-
+            card_num, balance, counter, paid = parts[1], parts[2], parts[3], parts[4]
             keyboard = {"inline_keyboard": [
-                [
-                    {"text": "1", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_1"},
-                    {"text": "2", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_2"},
-                    {"text": "3", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_3"},
-                    {"text": "4", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_4"},
-                    {"text": "5", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_5"}
-                ]
+                [{"text": "1 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_1"}, {"text": "2 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_2"}],
+                [{"text": "3 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_3"}, {"text": "5 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_5"}],
+                [{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
             ]}
-            msg = f"💳 الفيزا: `[ **** {card_num[-4:]} ]` | 💰 الرصيد: `${balance}`\n🔢 العداد: `{counter}` | 💵 المدفوع: `${paid}`\n\n👇 **اختر التايمر بالدقائق (Timer):**"
-            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            msg = f"💳 `[ **** {card_num[-4:]} ]` | 💰 `${balance}`\n🔢 العداد: `{counter}` | 💵 خُصم: `${paid}`\n\n👇 **اختر التايمر:**"
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data.startswith("sav_"):
             parts = data.split("_")
             card_num = parts[1]
-            original_balance = float(parts[2])
-            original_counter = int(parts[3])
-            paid_now = float(parts[4])
-            timer_alert = int(parts[5])
+            original_balance, paid_now = float(parts[2]), float(parts[4])
+            original_counter, timer_alert = int(parts[3]), int(parts[5])
 
             new_balance = max(0.0, original_balance - paid_now)
             new_counter = max(0, original_counter - 1)
@@ -299,104 +363,33 @@ def process_update(update):
                           (time.time(), card_num, new_balance, new_counter, paid_now, timer_alert, str(chat_id), "NO"))
                 conn.commit()
 
-            msg = f"✅ **تم استكمال وحفظ البطاقة بنجاح!**\n💰 الرصيد المتبقي: `${new_balance}`\n🔄 العداد المتبقي: `{new_counter}`\n⏳ التايمر يعمل الآن في الخلفية، سيصلك إشعار فور الانتهاء!"
-            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown"})
-            send_main_menu(chat_id)
-
-        elif data == "add_via_chat":
-            msg = "يمكنك الآن إرسال البيانات يدوياً بالتنسيق:\n`رقم البطاقة | الرصيد | العداد | المدفوع | التايمر`"
-            tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"})
-
-        elif data == "view_cards":
-            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
-                c = conn.cursor()
-                c.execute("SELECT * FROM cards ORDER BY id DESC LIMIT 10")
-                rows = c.fetchall()
-
-            if not rows:
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "No cards saved currently."})
-                return
-
-            keyboard = []
-            for count, row in enumerate(rows):
-                card_num = row[2]
-                last4 = card_num[-4:] if len(card_num) >= 4 else card_num
-                btn_text = f"{count + 1}. [ {last4} ] | ${row[3]} | {get_time_left(row[1], row[6])}"
-                keyboard.append([{"text": btn_text, "callback_data": f"card_{row[0]}"}])
-
-            tg_request("sendMessage", {"chat_id": chat_id, "text": "📋 Current Cards List:\n*(اضغط على الكارت للتفاصيل أو التعديل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
-
-        elif data == "delete_card":
-            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
-                c = conn.cursor()
-                c.execute("SELECT id, card_number FROM cards ORDER BY id DESC LIMIT 10")
-                rows = c.fetchall()
-
-            if not rows:
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "⚠️ لا توجد بطاقات محفوظة حالياً لمسحها."})
-                send_main_menu(chat_id)
-                return
-
-            keyboard = []
-            for row in rows:
-                card_num = row[1]
-                last4 = card_num[-4:] if len(card_num) >= 4 else card_num
-                btn_text = f"❌ مسح: [ {last4} ]"
-                keyboard.append([{"text": btn_text, "callback_data": f"del_{row[0]}"}])
-
-            tg_request("sendMessage", {"chat_id": chat_id, "text": "🗑️ **اختر البطاقة التي تريد مسحها:**", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
-
-        elif data.startswith("del_"):
-            card_id = data.split("_")[1]
-            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
-                c = conn.cursor()
-                c.execute("DELETE FROM cards WHERE id=?", (card_id,))
-                conn.commit()
-            tg_request("sendMessage", {"chat_id": chat_id, "text": "✅ **تم مسح البطاقة بنجاح!**", "parse_mode": "Markdown"})
-            send_main_menu(chat_id)
-
-        elif data.startswith("card_"):
-            card_id = data.split("_")[1]
-            with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
-                c = conn.cursor()
-                c.execute("SELECT * FROM cards WHERE id=?", (card_id,))
-                row = c.fetchone()
-            if row:
-                card_num = row[2]
-                last4 = card_num[-4:] if len(card_num) >= 4 else card_num
-                msg = f"💳 **Card Details** 💳\n\n🔢 Card: `[ {last4} ]`\n💰 Balance: ${row[3]}\n🔄 Counter: {row[4]}\n💵 Paid: ${row[5]}\n⏳ Time Left: {get_time_left(row[1], row[6])}"
-                # زرار التعديل جوه تفاصيل الكارت
-                keyboard = {"inline_keyboard": [[{"text": "✏️ تعديل بيانات الكارت", "callback_data": f"edit_prompt_{last4}"}]]}
-                tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            msg = f"✅ **تم حفظ البطاقة بنجاح وتشغيل التايمر!**\n💰 الرصيد المتبقي: `${new_balance}`\n🔄 العداد المتبقي: `{new_counter}`"
+            keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
+            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
 # ==========================================
-# 📡 حلقة الاتصال المباشر (Polling)
+# 📡 حلقة الاتصال المباشر 
 # ==========================================
 def start_polling():
     offset = 0
-    print("✅ Bot is Running (Polling Mode)...")
+    print("✅ System Online! No Webhooks needed.")
     while True:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
             res = requests.get(url, params={"offset": offset, "timeout": 30}, timeout=40).json()
-
             if "result" in res:
                 for update in res["result"]:
                     offset = update["update_id"] + 1
                     process_update(update)
-        except Exception as e:
+        except Exception:
             time.sleep(3)
 
 if __name__ == "__main__":
-    print("🔄 Cleaning old webhook & Setting up Menu...")
     try:
         requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook")
-        setup_bot_menu() # تفعيل القائمة الجانبية هنا
-    except:
-        pass
+    except: pass
     
     threading.Thread(target=run_server, daemon=True).start()
     threading.Thread(target=auto_check_loop, daemon=True).start()
     
-    print("🚀 All systems GO! Bot is ready.")
     start_polling()

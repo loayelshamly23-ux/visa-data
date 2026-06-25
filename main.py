@@ -38,6 +38,21 @@ def init_db():
 init_db()
 
 # ==========================================
+# 🛠️ إعداد قائمة الأوامر (Menu Button)
+# ==========================================
+def setup_commands():
+    # 1. إعداد قائمة الأوامر المنسدلة
+    commands = [
+        {"command": "start", "description": "⚡️ لوحة التحكم الرئيسية"},
+        {"command": "view", "description": "📋 عرض البطاقات المحفوظة"},
+        {"command": "backup", "description": "💾 سحب نسخة احتياطية"}
+    ]
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setMyCommands", json={"commands": commands})
+    
+    # 2. إجبار تليجرام على عرض زر "Menu" الافتراضي ومسح أي أزرار قديمة
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setChatMenuButton", json={"menu_button": {"type": "commands"}})
+
+# ==========================================
 # 🛠️ الدوال المساعدة (Helpers)
 # ==========================================
 def tg_request(method, payload):
@@ -64,26 +79,25 @@ def send_backup(chat_id):
         tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ لا توجد بيانات مسجلة حتى الآن لحفظها."})
 
 # ==========================================
-# 🎛️ واجهة لوحة التحكم (الزراير المربعة)
+# 🎛️ واجهة لوحة التحكم
 # ==========================================
 def send_main_menu(chat_id, message_id=None):
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "✍️ إضافة بطاقة", "callback_data": "menu_add"},
-                {"text": "📋 عرض البطاقات", "callback_data": "menu_view"}
+                {"text": "📋 عرض البطاقات", "callback_data": "menu_view"},
+                {"text": "🔍 بحث سريع", "callback_data": "menu_search"}
             ],
             [
-                {"text": "🔍 بحث سريع", "callback_data": "menu_search"},
-                {"text": "✏️ تعديل بطاقة", "callback_data": "menu_edit"}
+                {"text": "✏️ تعديل بطاقة", "callback_data": "menu_edit"},
+                {"text": "🗑️ حذف بطاقة", "callback_data": "menu_delete"}
             ],
             [
-                {"text": "🗑️ حذف بطاقة", "callback_data": "menu_delete"},
-                {"text": "💾 نسخة احتياطية", "callback_data": "menu_backup"}
+                {"text": "💾 سحب نسخة احتياطية (Backup)", "callback_data": "menu_backup"}
             ]
         ]
     }
-    msg_text = "⚡️ **لوحة تحكم النظام (VIP Dashboard)** ⚡️\n\nاختر الإجراء المطلوب من الأزرار أدناه:"
+    msg_text = "⚡️ **لوحة تحكم النظام (VIP Dashboard)** ⚡️\n\nأهلاً بك. البوت يعمل بوضعية الالتقاط الآلي، بمجرد إرسال البيانات سيتم حفظها فوراً.\n\n👇 **اختر إجراء من القائمة:**"
     
     if message_id:
         tg_request("editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": msg_text, "parse_mode": "Markdown", "reply_markup": keyboard})
@@ -135,9 +149,16 @@ def process_update(update):
     if "message" in update and "text" in update["message"]:
         text = update["message"]["text"]
         
-        # أمر البداية
+        # أوامر القائمة
         if text in ["/start", "start", "/main"]:
             send_main_menu(chat_id)
+            return
+        elif text == "/view":
+            update["callback_query"] = {"id": "0", "data": "menu_view", "message": {"chat": {"id": chat_id}, "message_id": 0}}
+            process_update(update)
+            return
+        elif text == "/backup":
+            send_backup(chat_id)
             return
 
         # البحث السريع (لو كتب 4 أرقام)
@@ -193,7 +214,7 @@ def process_update(update):
                     [{"text": "4", "callback_data": f"st2_{card_num}_{balance}_4"}, {"text": "5", "callback_data": f"st2_{card_num}_{balance}_5"}],
                     [{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
                 ]}
-                msg = f"✅ **فيزا جديدة!**\n💳 `[ **** {last4} ]`\n💰 الرصيد: `${balance}`\n\n👇 **اختر العداد:**"
+                msg = f"✅ **تم التقاط فيزا جديدة!**\n💳 `[ **** {last4} ]`\n💰 الرصيد المكتشف: `${balance}`\n\n👇 **اختر العداد (Counter):**"
                 tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
                 return
 
@@ -214,7 +235,7 @@ def process_update(update):
                     c.execute("INSERT INTO cards (save_time, card_number, balance, counter, paid_now, timer_alert, chat_id, notified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                               (time.time(), card_num, new_balance, new_counter, paid_now, timer_alert, str(chat_id), "NO"))
                     conn.commit()
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "✅ **تم حفظ البطاقة في النظام.**", "parse_mode": "Markdown"})
+                tg_request("sendMessage", {"chat_id": chat_id, "text": "✅ **تم التقاط وحفظ البطاقة في النظام بنجاح.**", "parse_mode": "Markdown"})
                 send_main_menu(chat_id)
             except ValueError:
                 pass
@@ -228,32 +249,32 @@ def process_update(update):
         cb = update["callback_query"]
         callback_id = cb["id"]
         data = cb["data"]
-        msg_id = cb["message"]["message_id"]
+        
+        # التأكد من وجود message_id لتفادي الأخطاء في التحديث الداخلي
+        msg_id = cb["message"]["message_id"] if "message_id" in cb["message"] else None
 
         tg_request("answerCallbackQuery", {"callback_query_id": callback_id})
 
         # زر الرجوع للقائمة
         if data == "back_to_main":
-            send_main_menu(chat_id, msg_id)
+            if msg_id:
+                send_main_menu(chat_id, msg_id)
+            else:
+                send_main_menu(chat_id)
 
-        # أوامر القائمة الرئيسية المربعة
-        elif data == "menu_add":
-            msg = "✍️ **لإضافة بطاقة يدوياً:**\nأرسل رسالة بهذا التنسيق:\n`رقم البطاقة | الرصيد | العداد | المدفوع | التايمر`\n\n*(أو قم بعمل إعادة توجيه لرسالة الدفع وسيتم التقاطها آلياً)*"
-            keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
-
+        # أوامر القائمة الرئيسية
         elif data == "menu_search":
             msg = "🔍 **البحث السريع:**\nالآن قم بإرسال **آخر 4 أرقام** من البطاقة في الشات للبحث عنها.\n*(مثال: أرسل `1234`)*"
             keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data == "menu_edit":
             msg = "✏️ **تعديل بطاقة موجودة:**\nلتعديل الرصيد أو العداد أو الوقت، انسخ التنسيق التالي واملأه:\n\n`تعديل | آخر_4_أرقام | الرصيد | العداد | التايمر`\n\n*(مثال: تعديل | 1234 | 40.5 | 2 | 15)*"
             keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data == "menu_backup":
-            tg_request("deleteMessage", {"chat_id": chat_id, "message_id": msg_id})
+            if msg_id: tg_request("deleteMessage", {"chat_id": chat_id, "message_id": msg_id})
             send_backup(chat_id)
             send_main_menu(chat_id)
 
@@ -265,7 +286,7 @@ def process_update(update):
 
             if not rows:
                 keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
-                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📭 النظام فارغ، لا توجد بطاقات محفوظة.", "reply_markup": keyboard})
+                if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📭 النظام فارغ، لا توجد بطاقات محفوظة.", "reply_markup": keyboard})
                 return
 
             keyboard = []
@@ -274,7 +295,11 @@ def process_update(update):
                 btn_text = f"💳 [ {last4} ] | ${row[3]} | {get_time_left(row[1], row[6])}"
                 keyboard.append([{"text": btn_text, "callback_data": f"card_{row[0]}"}])
             keyboard.append([{"text": "🔙 رجوع للقائمة الرئيسية", "callback_data": "back_to_main"}])
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📋 **قائمة البطاقات الحالية:**\n*(اضغط على الكارت للتفاصيل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
+            
+            if msg_id:
+                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📋 **قائمة البطاقات الحالية:**\n*(اضغط على الكارت للتفاصيل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
+            else:
+                tg_request("sendMessage", {"chat_id": chat_id, "text": "📋 **قائمة البطاقات الحالية:**\n*(اضغط على الكارت للتفاصيل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
 
         elif data == "menu_delete":
             with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
@@ -284,7 +309,7 @@ def process_update(update):
 
             if not rows:
                 keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
-                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "⚠️ لا توجد بطاقات لمسحها.", "reply_markup": keyboard})
+                if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "⚠️ لا توجد بطاقات لمسحها.", "reply_markup": keyboard})
                 return
 
             keyboard = []
@@ -292,9 +317,9 @@ def process_update(update):
                 last4 = row[1][-4:] if len(row[1]) >= 4 else row[1]
                 keyboard.append([{"text": f"❌ حذف: [ {last4} ]", "callback_data": f"del_{row[0]}"}])
             keyboard.append([{"text": "🔙 إلغاء والرجوع", "callback_data": "back_to_main"}])
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "🗑️ **اختر البطاقة لنهائياً من النظام:**", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "🗑️ **اختر البطاقة لحذفها نهائياً من النظام:**", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
 
-        # تفاصيل الكارت
+        # تفاصيل الكارت الداخلي
         elif data.startswith("card_"):
             card_id = data.split("_")[1]
             with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
@@ -308,13 +333,13 @@ def process_update(update):
                     [{"text": "✏️ تعديل سريع", "callback_data": f"edit_prompt_{last4}"}, {"text": "❌ حذف الكارت", "callback_data": f"del_{card_id}"}],
                     [{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]
                 ]}
-                tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+                if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data.startswith("edit_prompt_"):
             last4 = data.split("_")[2]
             msg = f"✏️ **تعديل الكارت `[ {last4} ]`**\n\nارسل التعديل الان كالتالي:\n`تعديل | {last4} | الرصيد | العداد | التايمر`"
             keyboard = {"inline_keyboard": [[{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]]}
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data.startswith("del_"):
             card_id = data.split("_")[1]
@@ -322,31 +347,31 @@ def process_update(update):
                 c = conn.cursor()
                 c.execute("DELETE FROM cards WHERE id=?", (card_id,))
                 conn.commit()
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "✅ **تم الحذف بنجاح.**", "parse_mode": "Markdown"})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "✅ **تم الحذف بنجاح.**", "parse_mode": "Markdown"})
             send_main_menu(chat_id)
 
-        # استكمال إضافة كارت جديد
+        # استكمال التقاط فيزا جديد 
         elif data.startswith("st2_"):
             parts = data.split("_")
             card_num, balance, counter = parts[1], parts[2], parts[3]
             keyboard = {"inline_keyboard": [
-                [{"text": "1", "callback_data": f"st3_{card_num}_{balance}_{counter}_1"}, {"text": "3", "callback_data": f"st3_{card_num}_{balance}_{counter}_3"}],
-                [{"text": "5", "callback_data": f"st3_{card_num}_{balance}_{counter}_5"}, {"text": "10", "callback_data": f"st3_{card_num}_{balance}_{counter}_10"}],
-                [{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
+                [{"text": "1", "callback_data": f"st3_{card_num}_{balance}_{counter}_1"}, {"text": "3", "callback_data": f"st3_{card_num}_{balance}_{counter}_3"}, {"text": "5", "callback_data": f"st3_{card_num}_{balance}_{counter}_5"}],
+                [{"text": "7", "callback_data": f"st3_{card_num}_{balance}_{counter}_7"}, {"text": "10", "callback_data": f"st3_{card_num}_{balance}_{counter}_10"}, {"text": "15", "callback_data": f"st3_{card_num}_{balance}_{counter}_15"}],
+                [{"text": "20", "callback_data": f"st3_{card_num}_{balance}_{counter}_20"}, {"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
             ]}
-            msg = f"💳 `[ **** {card_num[-4:]} ]` | 💰 `${balance}`\n🔢 العداد المختار: `{counter}`\n\n👇 **المدفوع الآن:**"
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            msg = f"💳 `[ **** {card_num[-4:]} ]` | 💰 `${balance}`\n🔢 العداد المختار: `{counter}`\n\n👇 **اختر المدفوع الآن (الدفعة):**"
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data.startswith("st3_"):
             parts = data.split("_")
             card_num, balance, counter, paid = parts[1], parts[2], parts[3], parts[4]
             keyboard = {"inline_keyboard": [
-                [{"text": "1 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_1"}, {"text": "2 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_2"}],
-                [{"text": "3 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_3"}, {"text": "5 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_5"}],
+                [{"text": "1 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_1"}, {"text": "2 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_2"}, {"text": "3 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_3"}],
+                [{"text": "5 دقائق", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_5"}, {"text": "10 دقائق", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_10"}, {"text": "15 دقيقة", "callback_data": f"sav_{card_num}_{balance}_{counter}_{paid}_15"}],
                 [{"text": "🔙 إلغاء", "callback_data": "back_to_main"}]
             ]}
             msg = f"💳 `[ **** {card_num[-4:]} ]` | 💰 `${balance}`\n🔢 العداد: `{counter}` | 💵 خُصم: `${paid}`\n\n👇 **اختر التايمر:**"
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
         elif data.startswith("sav_"):
             parts = data.split("_")
@@ -365,14 +390,14 @@ def process_update(update):
 
             msg = f"✅ **تم حفظ البطاقة بنجاح وتشغيل التايمر!**\n💰 الرصيد المتبقي: `${new_balance}`\n🔄 العداد المتبقي: `{new_counter}`"
             keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
-            tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
+            if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
 
 # ==========================================
 # 📡 حلقة الاتصال المباشر 
 # ==========================================
 def start_polling():
     offset = 0
-    print("✅ System Online! No Webhooks needed.")
+    print("✅ System Online! VIP Dashboard Active.")
     while True:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
@@ -388,6 +413,9 @@ if __name__ == "__main__":
     try:
         requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook")
     except: pass
+    
+    # تشغيل إعدادات القائمة الجديدة (Menu)
+    setup_commands()
     
     threading.Thread(target=run_server, daemon=True).start()
     threading.Thread(target=auto_check_loop, daemon=True).start()

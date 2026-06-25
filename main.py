@@ -24,6 +24,18 @@ def run_server():
     app.run(host="0.0.0.0", port=8000)
 
 # ==========================================
+# 💾 إعداد قائمة الأوامر (Menu Button)
+# ==========================================
+def setup_commands():
+    commands = [
+        {"command": "start", "description": "⚡️ لوحة التحكم الرئيسية"},
+        {"command": "view", "description": "📋 عرض البطاقات المحفوظة"},
+        {"command": "backup", "description": "💾 سحب نسخة احتياطية"}
+    ]
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setMyCommands", json={"commands": commands})
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setChatMenuButton", json={"menu_button": {"type": "commands"}})
+
+# ==========================================
 # 💾 قواعد البيانات 
 # ==========================================
 def init_db():
@@ -38,22 +50,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# 🛠️ إعداد قائمة الأوامر (Menu Button)
-# ==========================================
-def setup_commands():
-    # 1. إعداد قائمة الأوامر المنسدلة
-    commands = [
-        {"command": "start", "description": "⚡️ لوحة التحكم الرئيسية"},
-        {"command": "view", "description": "📋 عرض البطاقات المحفوظة"},
-        {"command": "backup", "description": "💾 سحب نسخة احتياطية"}
-    ]
-    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setMyCommands", json={"commands": commands})
-    
-    # 2. إجبار تليجرام على عرض زر "Menu" الافتراضي ومسح أي أزرار قديمة
-    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/setChatMenuButton", json={"menu_button": {"type": "commands"}})
-
-# ==========================================
-# 🛠️ الدوال المساعدة (Helpers)
+# 🛠️ الدوال المساعدة 
 # ==========================================
 def tg_request(method, payload):
     def send_it():
@@ -74,12 +71,12 @@ def send_backup(chat_id):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     try:
         with open("bot_data.db", "rb") as file:
-            requests.post(url, data={"chat_id": chat_id, "caption": "💾 **نسختك الاحتياطية من البيانات.**\nاحتفظ بهذا الملف للآمان.", "parse_mode": "Markdown"}, files={"document": file})
+            requests.post(url, data={"chat_id": chat_id, "caption": "💾 **نسختك الاحتياطية من البيانات.**\nاحتفظ بهذا الملف للأمان.", "parse_mode": "Markdown"}, files={"document": file})
     except Exception:
         tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ لا توجد بيانات مسجلة حتى الآن لحفظها."})
 
 # ==========================================
-# 🎛️ واجهة لوحة التحكم
+# 🎛️ واجهة لوحة التحكم (مربعات منظمة)
 # ==========================================
 def send_main_menu(chat_id, message_id=None):
     keyboard = {
@@ -97,7 +94,7 @@ def send_main_menu(chat_id, message_id=None):
             ]
         ]
     }
-    msg_text = "⚡️ **لوحة تحكم النظام (VIP Dashboard)** ⚡️\n\nأهلاً بك. البوت يعمل بوضعية الالتقاط الآلي، بمجرد إرسال البيانات سيتم حفظها فوراً.\n\n👇 **اختر إجراء من القائمة:**"
+    msg_text = "⚡️ **لوحة تحكم النظام (VIP Dashboard)** ⚡️\n\nأهلاً بك. النظام يعمل بوضعية الالتقاط الآلي، بمجرد إرسال البيانات سيتم حفظها.\n\n👇 **اختر إجراء من القائمة:**"
     
     if message_id:
         tg_request("editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": msg_text, "parse_mode": "Markdown", "reply_markup": keyboard})
@@ -131,7 +128,7 @@ def auto_check_loop():
         time.sleep(5)
 
 # ==========================================
-# 🚀 معالجة المدخلات (الرسائل والزراير)
+# 🚀 معالجة المدخلات 
 # ==========================================
 def process_update(update):
     chat_id = None
@@ -149,7 +146,7 @@ def process_update(update):
     if "message" in update and "text" in update["message"]:
         text = update["message"]["text"]
         
-        # أوامر القائمة
+        # أوامر القائمة الجانبية (Menu)
         if text in ["/start", "start", "/main"]:
             send_main_menu(chat_id)
             return
@@ -201,7 +198,7 @@ def process_update(update):
                 tg_request("sendMessage", {"chat_id": chat_id, "text": "❌ التنسيق غير صحيح."})
             return
 
-        # التقاط الفيزا التلقائي
+        # التقاط الفيزا التلقائي (Sniper Capture)
         if "Balance:" in text or "Purchase Successful" in text:
             card_match = re.search(r'\b(\d{16})\b', text)
             balance_match = re.search(r'Balance:\s*\$?\s*([\d\.]+)', text)
@@ -218,7 +215,7 @@ def process_update(update):
                 tg_request("sendMessage", {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown", "reply_markup": keyboard})
                 return
 
-        # إضافة يدوية كاملة
+        # إضافة يدوية بالكامل (تنسيق رسالة)
         elif "|" in text and len(text.split("|")) == 5 and not text.startswith("تعديل"):
             try:
                 parts = text.split("|")
@@ -243,26 +240,26 @@ def process_update(update):
             send_main_menu(chat_id)
 
     # ----------------------------------
-    # 🖱️ ثانياً: معالجة الأزرار
+    # 🖱️ ثانياً: معالجة الأزرار (Spam Prevented)
     # ----------------------------------
     elif "callback_query" in update:
         cb = update["callback_query"]
         callback_id = cb["id"]
         data = cb["data"]
-        
-        # التأكد من وجود message_id لتفادي الأخطاء في التحديث الداخلي
         msg_id = cb["message"]["message_id"] if "message_id" in cb["message"] else None
 
-        tg_request("answerCallbackQuery", {"callback_query_id": callback_id})
+        # منع التهنيج والسبام بقبول ضغطة واحدة مباشرة
+        try:
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/answerCallbackQuery", json={"callback_query_id": callback_id, "cache_time": 0})
+        except:
+            pass
 
         # زر الرجوع للقائمة
         if data == "back_to_main":
-            if msg_id:
-                send_main_menu(chat_id, msg_id)
-            else:
-                send_main_menu(chat_id)
+            if msg_id: send_main_menu(chat_id, msg_id)
+            else: send_main_menu(chat_id)
 
-        # أوامر القائمة الرئيسية
+        # أوامر القائمة الرئيسية المربعة
         elif data == "menu_search":
             msg = "🔍 **البحث السريع:**\nالآن قم بإرسال **آخر 4 أرقام** من البطاقة في الشات للبحث عنها.\n*(مثال: أرسل `1234`)*"
             keyboard = {"inline_keyboard": [[{"text": "🔙 رجوع للقائمة", "callback_data": "back_to_main"}]]}
@@ -298,8 +295,6 @@ def process_update(update):
             
             if msg_id:
                 tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "📋 **قائمة البطاقات الحالية:**\n*(اضغط على الكارت للتفاصيل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
-            else:
-                tg_request("sendMessage", {"chat_id": chat_id, "text": "📋 **قائمة البطاقات الحالية:**\n*(اضغط على الكارت للتفاصيل)*", "reply_markup": {"inline_keyboard": keyboard}, "parse_mode": "Markdown"})
 
         elif data == "menu_delete":
             with sqlite3.connect("bot_data.db", check_same_thread=False, timeout=20) as conn:
@@ -350,7 +345,7 @@ def process_update(update):
             if msg_id: tg_request("editMessageText", {"chat_id": chat_id, "message_id": msg_id, "text": "✅ **تم الحذف بنجاح.**", "parse_mode": "Markdown"})
             send_main_menu(chat_id)
 
-        # استكمال التقاط فيزا جديد 
+        # استكمال إضافة كارت جديد مع أزرار الدفعات والتايمر المحدثة
         elif data.startswith("st2_"):
             parts = data.split("_")
             card_num, balance, counter = parts[1], parts[2], parts[3]
@@ -397,7 +392,7 @@ def process_update(update):
 # ==========================================
 def start_polling():
     offset = 0
-    print("✅ System Online! VIP Dashboard Active.")
+    print("✅ System Online! All modules integrated & secured.")
     while True:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
@@ -412,9 +407,10 @@ def start_polling():
 if __name__ == "__main__":
     try:
         requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook")
-    except: pass
+    except: 
+        pass
     
-    # تشغيل إعدادات القائمة الجديدة (Menu)
+    # تفعيل قائمة الأوامر المنسدلة (زر القائمة)
     setup_commands()
     
     threading.Thread(target=run_server, daemon=True).start()
